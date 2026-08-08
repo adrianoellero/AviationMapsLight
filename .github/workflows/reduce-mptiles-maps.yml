@@ -26,17 +26,19 @@ jobs:
           URL_JAR=$(echo "$HEX_JAR" | xxd -r -p)
           wget -q -O planetiler.jar "$URL_JAR"
           
-          echo "📡 Querying Geofabrik live catalog index using browser payload emulation..."
-          # Fixes JQ Parse Error by forcing a standard User-Agent header, bypassing GitHub Actions automated bot locks
+          echo "📡 Querying Geofabrik live data index..."
+          # FIX: Targets the true structural JSON index endpoint directly
           curl -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" https://geofabrik.de > geofabrik_index.json
           
-          # DYNAMIC FILTER EXTRACTOR: Parse all global geographical keys natively
-          # Filters out microscopic sub-national fragments (e.g., 'italy/trentino-alto-adige' or 'germany/bayern')
-          # Keeps only sovereign nations and major flight continental blocks (e.g., 'italy', 'slovenia', 'france', 'north-america')
+          # DYNAMIC COHERENT EXTRACTOR: Maps features down to raw download region identifiers natively
+          # This reads keys like 'europe/italy' or 'europe/slovenia' which planetiler processes directly
           jq -r '.features[].properties.id' geofabrik_index.json > raw_paths.txt
           
-          # Clean up path fragments to isolate only core root country keys matching Planetiler's operational array formats
-          grep -E '^[a-z\-]+$' raw_paths.txt | sort -u > target_world_areas.txt
+          # Clean and optimize the matrix list index:
+          # 1. Filters out micro-regional sub-files containing double slashes (e.g., 'europe/italy/trentino-alto-adige')
+          # 2. Excludes uncompiled internal tracking map layers ('special')
+          # 3. Retains all continent blocks and national boundaries globally
+          grep -E '^[a-z\-]+(/[a-z\-]+)?$' raw_paths.txt | grep -v 'special' | sort -u > target_world_areas.txt
           
           echo "📊 Total verified dynamic airspace regions discovered worldwide: $(wc -l < target_world_areas.txt)"
           echo "📝 Displaying sample dynamic airspaces ready for extraction:"
@@ -47,6 +49,9 @@ jobs:
           while read -r CURRENT_AREA; do
             # Protect loop scope from running empty or blank layout text strings
             [[ -z "$CURRENT_AREA" ]] && continue
+            
+            # Extract only the file name from the path for the output mapping (e.g. europe/italy -> italy)
+            FILE_NAME=$(basename "$CURRENT_AREA")
             
             echo "🚀 --------------------------------------------------------"
             echo "⚙️ COMPILING REGION: [ $CURRENT_AREA ]"
@@ -59,7 +64,7 @@ jobs:
             # --- 1. HEAVY MAP COMPILATION (Full OSM Profiles) ---
             java -Xmx4g -jar planetiler.jar \
               --area="$CURRENT_AREA" \
-              --output="heavy_dist/${CURRENT_AREA}.pmtiles" \
+              --output="heavy_dist/${FILE_NAME}.pmtiles" \
               --download \
               --download-timeout=5m \
               --download-threads=2 \
@@ -69,7 +74,7 @@ jobs:
             # Automatically strips out heavy multi-polygon nodes to protect tablet rendering speeds
             java -Xmx4g -jar planetiler.jar \
               --area="$CURRENT_AREA" \
-              --output="light_dist/${CURRENT_AREA}.pmtiles" \
+              --output="light_dist/${FILE_NAME}.pmtiles" \
               --download \
               --download-timeout=5m \
               --download-threads=2 \
@@ -78,13 +83,13 @@ jobs:
 
             # --- 3. SMART SPLIT LOGIC (> 2GB Controller for Heavy Repos) ---
             MAX_SIZE=2147483648
-            HEAVY_FILE="heavy_dist/${CURRENT_AREA}.pmtiles"
+            HEAVY_FILE="heavy_dist/${FILE_NAME}.pmtiles"
             
             if [ -f "$HEAVY_FILE" ]; then
               FILE_SIZE=$(stat -c%s "$HEAVY_FILE")
               if [ "$FILE_SIZE" -ge "$MAX_SIZE" ]; then
                 echo "⚠️ Heavy file past 2GB ($FILE_SIZE bytes). Splitting block..."
-                split -b 1500m -d "$HEAVY_FILE" "heavy_dist/${CURRENT_AREA}.pmtiles.part"
+                split -b 1500m -d "$HEAVY_FILE" "heavy_dist/${FILE_NAME}.pmtiles.part"
                 rm "$HEAVY_FILE"
               fi
             fi
