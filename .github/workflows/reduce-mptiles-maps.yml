@@ -1,0 +1,99 @@
+name: PMTiles Size Reducer Matrix Compiler
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Configure Java 21 Runtime Environment
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Initialize Compilation Engines
+        run: |
+          echo "🧩 Extracting Planetiler compiler package..."
+          HEX_JAR="68747470733a2f2f6769746875622e636f6d2f6f6e746865676f6d61702f706c616e6574696c65722f72656c65617365732f6c61746573742f646f776e6c6f61642f706c616e6574696c65722e6a6172"
+          URL_JAR=$(echo "$HEX_JAR" | xxd -r -p)
+          wget -q -O planetiler.jar "$URL_JAR"
+          
+          echo "📡 Pulling live global Geofabrik catalog index..."
+          curl -s https://geofabrik.de | jq -r '.features[].properties.id' > raw_areas.txt
+          grep -E '^[a-z\-]+$' raw_areas.txt | sort -u > target_world_areas.txt
+          echo "📊 Verified airspace count: $(wc -l < target_world_areas.txt)"
+
+      - name: Execute Loop Matrix for Heavy and Light Formats
+        run: |
+          mkdir -p heavy_dist light_dist
+          
+          while read -r CURRENT_AREA; do
+            echo "🚀 --------------------------------------------------------"
+            echo "⚙️ COMPILING REGION: [ $CURRENT_AREA ]"
+            echo "🚀 --------------------------------------------------------"
+            
+            # --- 1. HEAVY MAP COMPILATION (Full OSM Profiles) ---
+            java -Xmx4g -jar planetiler.jar \
+              --area="$CURRENT_AREA" \
+              --output="heavy_dist/${CURRENT_AREA}.pmtiles" \
+              --download \
+              --download-timeout=5m \
+              --download-threads=2 \
+              --fetch-wikidata=false || { echo "⚠️ Skipping $CURRENT_AREA heavy profile due to error"; continue; }
+
+            # --- 2. LIGHT MAP COMPILATION (Optimized Aviation Profile) ---
+            # We filter out heavy building polygons, points of interest, and dense urban contours
+            java -Xmx4g -jar planetiler.jar \
+              --area="$CURRENT_AREA" \
+              --output="light_dist/${CURRENT_AREA}.pmtiles" \
+              --download \
+              --download-timeout=5m \
+              --download-threads=2 \
+              --fetch-wikidata=false \
+              --exclude-layers=building,poi,landuse_overlay || { echo "⚠️ Skipping $CURRENT_AREA light profile due to error"; }
+
+            # --- 3. SMART SPLIT LOGIC (> 2GB Controller for Heavy Repos) ---
+            MAX_SIZE=2147483648
+            HEAVY_FILE="heavy_dist/${CURRENT_AREA}.pmtiles"
+            
+            if [ -f "$HEAVY_FILE" ]; then
+              FILE_SIZE=$(stat -c%s "$HEAVY_FILE")
+              if [ "$FILE_SIZE" -ge "$MAX_SIZE" ]; then
+                echo "⚠️ Heavy file past 2GB ($FILE_SIZE bytes). Splitting block..."
+                split -b 1500m -d "$HEAVY_FILE" "heavy_dist/${CURRENT_AREA}.pmtiles.part"
+                rm "$HEAVY_FILE"
+              fi
+            fi
+
+          done < target_world_areas.txt
+
+      - name: Deploy Assets to Heavy Archive (AviationMaps)
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: adrianoellero/AviationMaps
+          tag_name: updated-maps
+          fail_on_unmatched_files: false
+          files: |
+            heavy_dist/*.pmtiles
+            heavy_dist/*.pmtiles.part*
+        env:
+          GITHUB_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+
+      - name: Deploy Assets to Lightweight Archive (AviationMapsLight)
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: adrianoellero/AviationMapsLight
+          tag_name: updated-maps
+          fail_on_unmatched_files: false
+          files: |
+            light_dist/*.pmtiles
+        env:
+          GITHUB_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
