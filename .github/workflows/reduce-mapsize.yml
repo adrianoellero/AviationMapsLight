@@ -29,12 +29,9 @@ jobs:
           echo "📡 Generating clean, verified sovereign charts matrix lookup index..."
           # FIXED LOGIC: Passing the absolute clean country key strings that planetiler expects natively
           cat << 'EOF' > target_world_areas.txt
-          italy
+       
           slovenia
-          france
-          spain
-          switzerland
-          austria
+         
           EOF
           
           echo "📊 Total operational master airspace charts seeded: $(wc -l < target_world_areas.txt)"
@@ -96,4 +93,4 @@ jobs:
 
           done < target_world_areas.txt
         env:
-          GITHUB_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }} # Changed from GITHUB_TOKEN to GH_TOKEN
