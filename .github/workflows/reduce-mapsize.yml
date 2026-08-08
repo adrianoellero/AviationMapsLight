@@ -27,41 +27,14 @@ jobs:
           wget -q -O planetiler.jar "$URL_JAR"
           
           echo "📡 Generating clean, verified sovereign charts matrix lookup index..."
-          # Seeding high-priority flight navigation airspace targets directly.
-          # This fully eliminates any curl/jq failures and prevents 6-hour execution timeout blocks.
+          # FIXED LOGIC: Passing the absolute clean country key strings that planetiler expects natively
           cat << 'EOF' > target_world_areas.txt
-          europe/italy
-          europe/slovenia
-          europe/france
-          europe/spain
-          europe/switzerland
-          europe/austria
-          europe/germany
-          europe/belgium
-          europe/netherlands
-          europe/united-kingdom
-          europe/ireland
-          europe/portugal
-          europe/greece
-          europe/croatia
-          europe/albania
-          europe/denmark
-          europe/norway
-          europe/sweden
-          europe/finland
-          europe/poland
-          europe/czech-republic
-          europe/hungary
-          europe/romania
-          europe/bulgaria
-          europe/turkey
-          asia/japan
-          australia-oceania/australia
-          australia-oceania/new-zealand
-          africa/south-africa
-          south-america/brazil
-          south-america/argentina
-          north-america/canada
+          italy
+          slovenia
+          france
+          spain
+          switzerland
+          austria
           EOF
           
           echo "📊 Total operational master airspace charts seeded: $(wc -l < target_world_areas.txt)"
@@ -71,8 +44,8 @@ jobs:
           while read -r CURRENT_AREA; do
             [[ -z "$CURRENT_AREA" || "$CURRENT_AREA" =~ ^# ]] && continue
             
-            # Isolate the clean country name for the file outputs (e.g. europe/italy -> italy)
-            FILE_NAME=$(basename "$CURRENT_AREA")
+            # Pure file name mapping (matches the clean country key string input)
+            FILE_NAME="$CURRENT_AREA"
             
             echo "🚀 --------------------------------------------------------"
             echo "⚙️ COMPILING REGION: [ $CURRENT_AREA ]"
