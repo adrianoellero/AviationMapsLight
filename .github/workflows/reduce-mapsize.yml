@@ -93,4 +93,4 @@ jobs:
 
           done < target_world_areas.txt
         env:
-          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }} # Changed from GITHUB_TOKEN to GH_TOKEN
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
