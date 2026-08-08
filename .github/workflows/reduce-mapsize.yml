@@ -13,6 +13,25 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      # 🔐 TEST IMMEDIATO DEL TOKEN: Valida l'autenticazione ed i permessi nei primi 5 secondi
+      - name: 🔐 Pre-Flight Token Validation Check
+        run: |
+          echo "🕵️ Inspecting token availability..."
+          if [ -z "$GH_TOKEN" ]; then
+            echo "❌ CRITICAL ERROR: The CROSS_REPO_TOKEN is missing or not set in Repository Secrets!"
+            exit 1
+          fi
+          
+          echo "🔑 Testing write access for Heavy Repository (AviationMaps)..."
+          gh repo view adrianoellero/AviationMaps --json name || { echo "❌ Access Denied to AviationMaps! Check token scopes."; exit 1; }
+          
+          echo "🔑 Testing write access for Light Repository (AviationMapsLight)..."
+          gh repo view adrianoellero/AviationMapsLight --json name || { echo "❌ Access Denied to AviationMapsLight! Check token scopes."; exit 1; }
+          
+          echo "✅ SECURITY VALIDATION PASSED! Both repositories are accessible. Starting compilation..."
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+
       - name: Configure Java 21 Runtime Environment
         uses: actions/setup-java@v5
         with:
@@ -26,12 +45,9 @@ jobs:
           URL_JAR=$(echo "$HEX_JAR" | xxd -r -p)
           wget -q -O planetiler.jar "$URL_JAR"
           
-          echo "📡 Generating clean, verified sovereign charts matrix lookup index..."
-          # FIXED LOGIC: Passing the absolute clean country key strings that planetiler expects natively
+          echo "📡 Generating clean, verified airspace index..."
           cat << 'EOF' > target_world_areas.txt
-       
           slovenia
-         
           EOF
           
           echo "📊 Total operational master airspace charts seeded: $(wc -l < target_world_areas.txt)"
@@ -41,14 +57,12 @@ jobs:
           while read -r CURRENT_AREA; do
             [[ -z "$CURRENT_AREA" || "$CURRENT_AREA" =~ ^# ]] && continue
             
-            # Pure file name mapping (matches the clean country key string input)
             FILE_NAME="$CURRENT_AREA"
             
             echo "🚀 --------------------------------------------------------"
             echo "⚙️ COMPILING REGION: [ $CURRENT_AREA ]"
             echo "🚀 --------------------------------------------------------"
             
-            # Reset build staging directories for each individual country loop step
             rm -rf heavy_dist light_dist
             mkdir -p heavy_dist light_dist
             
@@ -62,7 +76,6 @@ jobs:
               --fetch-wikidata=false || { echo "⚠️ Skipping $CURRENT_AREA heavy profile due to error"; continue; }
 
             # --- 2. LIGHT MAP COMPILATION (Optimized Aviation Profile) ---
-            # Automatically strips out heavy building nodes to protect tablet rendering speeds
             java -Xmx4g -jar planetiler.jar \
               --area="$CURRENT_AREA" \
               --output="light_dist/${FILE_NAME}.pmtiles" \
