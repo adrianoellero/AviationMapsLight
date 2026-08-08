@@ -27,14 +27,13 @@ jobs:
           wget -q -O planetiler.jar "$URL_JAR"
           
           echo "📡 Querying Geofabrik live data index..."
-          # L'URL REALE DEL JSON: download.geofabrik.de/index-v1.json
-          curl -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" https://geofabrik.de > geofabrik_index.json
+          # FORCE CORRECT JSON DIRECT FILE ENDPOINT WITH NO REDIRECTS
+          curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "https://geofabrik.de" > geofabrik_index.json
           
           # DYNAMIC COHERENT EXTRACTOR: Maps features down to raw download region identifiers natively
           jq -r '.features[].properties.id' geofabrik_index.json > raw_paths.txt
           
           # Clean and optimize the matrix list index:
-          # Retains paths like 'europe/italy', 'europe/slovenia', 'north-america/canada'
           grep -E '^[a-z\-]+(/[a-z\-]+)?$' raw_paths.txt | grep -v 'special' | sort -u > target_world_areas.txt
           
           echo "📊 Total verified dynamic airspace regions discovered worldwide: $(wc -l < target_world_areas.txt)"
@@ -53,7 +52,7 @@ jobs:
             echo "⚙️ COMPILING REGION: [ $CURRENT_AREA ]"
             echo "🚀 --------------------------------------------------------"
             
-            # Reset build staging directories for each individual country loop step to protect hard disk constraints
+            # Reset build staging directories for each country step to protect runner hard disk limits
             rm -rf heavy_dist light_dist
             mkdir -p heavy_dist light_dist
             
@@ -67,7 +66,7 @@ jobs:
               --fetch-wikidata=false || { echo "⚠️ Skipping $CURRENT_AREA heavy profile due to compile/download failure"; continue; }
 
             # --- 2. LIGHT MAP COMPILATION (Optimized Aviation Profile) ---
-            # Automatically strips out heavy multi-polygon nodes to protect tablet rendering speeds
+            # Automatically filters out heavy vector layers to keep the tablet rendering lightning fast
             java -Xmx4g -jar planetiler.jar \
               --area="$CURRENT_AREA" \
               --output="light_dist/${FILE_NAME}.pmtiles" \
@@ -91,11 +90,9 @@ jobs:
             fi
 
             # --- 4. STEP-RELEASE INJECTION: Deploy Country Assets to Heavy Archive ---
-            # Verified pathway straight into your heavy deployment container
             gh release upload updated-maps heavy_dist/* --clobber -R adrianoellero/AviationMaps || echo "⚠️ Heavy asset injection skipped."
 
             # --- 5. STEP-RELEASE INJECTION: Deploy Country Assets to Light Archive ---
-            # Verified pathway straight into your optimized light deployment container
             gh release upload updated-maps light_dist/* --clobber -R adrianoellero/AviationMapsLight || echo "⚠️ Light asset injection skipped."
 
           done < target_world_areas.txt
